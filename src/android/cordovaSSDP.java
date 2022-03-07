@@ -1,26 +1,31 @@
 package com.scott.plugin;
 
-import org.apache.cordova.*;
+import android.content.Context;
+import android.net.wifi.WifiManager;
 
 import com.loopj.android.http.AsyncHttpResponseHandler;
 import com.loopj.android.http.SyncHttpClient;
-import cz.msebera.android.httpclient.Header;
 
+import org.apache.cordova.CallbackContext;
+import org.apache.cordova.CordovaPlugin;
+import org.apache.cordova.LOG;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.math.BigInteger;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.SocketTimeoutException;
-
+import java.net.UnknownHostException;
+import java.nio.ByteOrder;
 import java.util.Scanner;
-import java.io.IOException;
 
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
-
-import android.content.Context;
+import cz.msebera.android.httpclient.Header;
 
 public class cordovaSSDP extends CordovaPlugin {
 
@@ -28,7 +33,7 @@ public class cordovaSSDP extends CordovaPlugin {
     private JSONArray mDeviceList;
     private Context mContext;
 
-    public cordovaSSDP(Context context){
+    public cordovaSSDP(Context context) {
         mContext = context;
     }
 
@@ -36,16 +41,16 @@ public class cordovaSSDP extends CordovaPlugin {
         Scanner s = new Scanner(content);
         s.nextLine();
         while (s.hasNextLine()) {
-          String line = s.nextLine();
-          int index = line.indexOf(':');
+            String line = s.nextLine();
+            int index = line.indexOf(':');
 
-          if (index == -1) {
-            return null;
-          }
-          String header = line.substring(0, index);
-          if (headerName.equalsIgnoreCase(header.trim())) {
-            return line.substring(index + 1).trim();
-          }
+            if (index == -1) {
+                return null;
+            }
+            String header = line.substring(0, index);
+            if (headerName.equalsIgnoreCase(header.trim())) {
+                return line.substring(index + 1).trim();
+            }
         }
         return null;
     }
@@ -64,9 +69,10 @@ public class cordovaSSDP extends CordovaPlugin {
                     e.printStackTrace();
                 }
             }
+
             @Override
             public void onFailure(int statusCode, Header[] headers, byte[] responseBody,
-                                  Throwable error) {
+                Throwable error) {
                 LOG.e(TAG, responseBody.toString());
             }
         });
@@ -78,7 +84,25 @@ public class cordovaSSDP extends CordovaPlugin {
         final String SSDP_IP = "239.255.255.250";
         int TIMEOUT = 3000;
 
-        InetSocketAddress srcAddress = new InetSocketAddress(SSDP_SEARCH_PORT);
+
+        // https://stackoverflow.com/questions/16730711/get-my-wifi-ip-address-android
+        final WifiManager wifiManager = (WifiManager) this.mContext.getSystemService(Context.WIFI_SERVICE);
+        int ipAddress = wifiManager.getConnectionInfo().getIpAddress();
+
+        // Convert little-endian to big-endianif needed
+        if (ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)) {
+            ipAddress = Integer.reverseBytes(ipAddress);
+        }
+
+        byte[] ipByteArray = BigInteger.valueOf(ipAddress).toByteArray();
+        InetAddress inetAddress = null;
+        try {
+            inetAddress = InetAddress.getByAddress(ipByteArray);
+        } catch (UnknownHostException ex) {
+            LOG.e(TAG, "Unable to get host address.");
+        }
+
+        InetSocketAddress srcAddress = new InetSocketAddress(inetAddress, SSDP_SEARCH_PORT);
         InetSocketAddress dstAddress = new InetSocketAddress(InetAddress.getByName(SSDP_IP), SSDP_PORT);
 
         // Clear the cached Device List every time a new search is called
@@ -88,8 +112,8 @@ public class cordovaSSDP extends CordovaPlugin {
         StringBuffer discoveryMessage = new StringBuffer();
         discoveryMessage.append("M-SEARCH * HTTP/1.1\r\n");
         discoveryMessage.append("HOST: " + SSDP_IP + ":" + SSDP_PORT + "\r\n");
-        
-        discoveryMessage.append("ST:"+service+"\r\n");
+
+        discoveryMessage.append("ST:" + service + "\r\n");
         //discoveryMessage.append("ST:ssdp:all\r\n");
         discoveryMessage.append("MAN: \"ssdp:discover\"\r\n");
         discoveryMessage.append("MX: 2\r\n");
@@ -101,8 +125,7 @@ public class cordovaSSDP extends CordovaPlugin {
         // Send multi-cast packet
         MulticastSocket multicast = null;
         try {
-            multicast = new MulticastSocket(null);
-            multicast.bind(srcAddress);
+            multicast = new MulticastSocket(srcAddress);
             multicast.setTimeToLive(4);
             multicast.send(discoveryPacket);
         } finally {
@@ -121,7 +144,7 @@ public class cordovaSSDP extends CordovaPlugin {
                 try {
                     receivePacket = new DatagramPacket(new byte[1536], 1536);
                     wildSocket.receive(receivePacket);
-                    String message = new String(receivePacket.getData());   
+                    String message = new String(receivePacket.getData());
                     try {
                         JSONObject device = new JSONObject();
                         device.put("USN", parseHeaderValue(message, "USN"));
@@ -144,5 +167,4 @@ public class cordovaSSDP extends CordovaPlugin {
             }
         }
     }
-
 }
