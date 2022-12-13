@@ -18,6 +18,9 @@
 
   <!-- android -->
   <platform name="android">
+    <edit-config file="AndroidManifest.xml" mode="merge" target="/manifest/uses-permission" xmlns:android="http://schemas.android.com/apk/res/android">
+      <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    </edit-config>
 
     <config-file target="res/xml/config.xml" parent="/*">
       <feature name="serviceDiscovery">
