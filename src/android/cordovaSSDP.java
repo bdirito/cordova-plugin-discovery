@@ -1,7 +1,6 @@
 package com.scott.plugin;
 
 import android.content.Context;
-import android.net.wifi.WifiManager;
 
 import com.loopj.android.http.AsyncHttpResponseHandler;
 import com.loopj.android.http.SyncHttpClient;
@@ -14,15 +13,11 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.math.BigInteger;
 import java.net.DatagramPacket;
-import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.net.MulticastSocket;
 import java.net.SocketTimeoutException;
-import java.net.UnknownHostException;
-import java.nio.ByteOrder;
+import java.util.HashSet;
 import java.util.Scanner;
 
 import cz.msebera.android.httpclient.Header;
@@ -32,8 +27,9 @@ public class cordovaSSDP extends CordovaPlugin {
     private static final String TAG = "scott.plugin.cordovaSSDP";
     private JSONArray mDeviceList;
     private Context mContext;
+    private HashSet<String> deviceIps;
 
-    public cordovaSSDP(Context context) {
+    public cordovaSSDP(Context context){
         mContext = context;
     }
 
@@ -64,15 +60,19 @@ public class cordovaSSDP extends CordovaPlugin {
                 try {
                     JSONObject device = jsonObj;
                     device.put("xml", new String(responseBody));
-                    mDeviceList.put(device);
+                    String location = device.get("LOCATION").toString();
+                    if (!deviceIps.contains(location)) {
+                        mDeviceList.put(device);
+                        deviceIps.add(location);
+                    }
+
                 } catch (JSONException e) {
                     e.printStackTrace();
                 }
             }
-
             @Override
             public void onFailure(int statusCode, Header[] headers, byte[] responseBody,
-                Throwable error) {
+                                  Throwable error) {
                 LOG.e(TAG, responseBody.toString());
             }
         });
@@ -80,76 +80,40 @@ public class cordovaSSDP extends CordovaPlugin {
 
     public void search(String service, CallbackContext callbackContext) throws IOException {
         final int SSDP_PORT = 1900;
-        final int SSDP_SEARCH_PORT = 1901;
         final String SSDP_IP = "239.255.255.250";
-        int TIMEOUT = 3000;
+        // max-age is observed to be 15; We 'should' get everything broadcasting at no more then 7.5s
+        // apart. Due to the way we are doing things we will wait between TIMEOUT and TIMEOUT * 2
+        int TIMEOUT = 7500;
 
-
-        // https://stackoverflow.com/questions/16730711/get-my-wifi-ip-address-android
-        final WifiManager wifiManager = (WifiManager) this.mContext.getSystemService(Context.WIFI_SERVICE);
-        int ipAddress = wifiManager.getConnectionInfo().getIpAddress();
-
-        // Convert little-endian to big-endianif needed
-        if (ByteOrder.nativeOrder().equals(ByteOrder.LITTLE_ENDIAN)) {
-            ipAddress = Integer.reverseBytes(ipAddress);
-        }
-
-        byte[] ipByteArray = BigInteger.valueOf(ipAddress).toByteArray();
-        InetAddress inetAddress = null;
-        try {
-            inetAddress = InetAddress.getByAddress(ipByteArray);
-        } catch (UnknownHostException ex) {
-            LOG.e(TAG, "Unable to get host address.");
-        }
-
-        InetSocketAddress srcAddress = new InetSocketAddress(inetAddress, SSDP_SEARCH_PORT);
-        InetSocketAddress dstAddress = new InetSocketAddress(InetAddress.getByName(SSDP_IP), SSDP_PORT);
 
         // Clear the cached Device List every time a new search is called
         mDeviceList = new JSONArray();
+        deviceIps = new HashSet<>();
 
-        // M-Search Packet
-        StringBuffer discoveryMessage = new StringBuffer();
-        discoveryMessage.append("M-SEARCH * HTTP/1.1\r\n");
-        discoveryMessage.append("HOST: " + SSDP_IP + ":" + SSDP_PORT + "\r\n");
-
-        discoveryMessage.append("ST:" + service + "\r\n");
-        //discoveryMessage.append("ST:ssdp:all\r\n");
-        discoveryMessage.append("MAN: \"ssdp:discover\"\r\n");
-        discoveryMessage.append("MX: 2\r\n");
-        discoveryMessage.append("\r\n");
-        System.out.println("Request: " + discoveryMessage.toString() + "\n");
-        byte[] discoveryMessageBytes = discoveryMessage.toString().getBytes();
-        DatagramPacket discoveryPacket = new DatagramPacket(discoveryMessageBytes, discoveryMessageBytes.length, dstAddress);
-
-        // Send multi-cast packet
+        // Listen for NOTIFY multi-cast packets
         MulticastSocket multicast = null;
         try {
-            multicast = new MulticastSocket(srcAddress);
-            multicast.setTimeToLive(4);
-            multicast.send(discoveryPacket);
-        } finally {
-            multicast.disconnect();
-            multicast.close();
-        }
+            multicast = new MulticastSocket(SSDP_PORT);
+            multicast.setReuseAddress(true);
+            multicast.joinGroup(InetAddress.getByName(SSDP_IP));
+            multicast.setSoTimeout(TIMEOUT);
 
-        // Create a socket and wait for the response
-        DatagramSocket wildSocket = null;
-        DatagramPacket receivePacket;
-        try {
-            wildSocket = new DatagramSocket(SSDP_SEARCH_PORT);
-            wildSocket.setSoTimeout(TIMEOUT);
-
+            DatagramPacket receivePacket;
             while (true) {
                 try {
                     receivePacket = new DatagramPacket(new byte[1536], 1536);
-                    wildSocket.receive(receivePacket);
+                    multicast.receive(receivePacket);
                     String message = new String(receivePacket.getData());
                     try {
+                        String ntValue = parseHeaderValue(message, "NT");
+                        if (!service.equals(ntValue)) {
+                            continue;
+                        }
                         JSONObject device = new JSONObject();
                         device.put("USN", parseHeaderValue(message, "USN"));
-                        device.put("LOCATION", parseHeaderValue(message, "LOCATION"));
-                        device.put("ST", parseHeaderValue(message, "ST"));
+                        device.put("LOCATION", parseHeaderValue(message, "Location"));
+                        // yes this is the nt value but keep the api of the plugin to js the same
+                        device.put("ST", ntValue);
                         device.put("Server", parseHeaderValue(message, "Server"));
                         createServiceObjWithXMLData(parseHeaderValue(message, "LOCATION"), device);
                     } catch (JSONException e) {
@@ -160,11 +124,15 @@ public class cordovaSSDP extends CordovaPlugin {
                     break;
                 }
             }
+        } catch (Exception e) {
+            System.out.println(e);
         } finally {
-            if (wildSocket != null) {
-                wildSocket.disconnect();
-                wildSocket.close();
+            if (multicast != null) {
+                multicast.leaveGroup(InetAddress.getByName(SSDP_IP));
+                multicast.disconnect();
+                multicast.close();
             }
         }
     }
+
 }
