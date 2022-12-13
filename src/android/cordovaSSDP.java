@@ -121,7 +121,7 @@ public class cordovaSSDP extends CordovaPlugin {
                         String location = parseHeaderValue(message, "Location");
                         JSONObject device = new JSONObject();
                         device.put("USN", parseHeaderValue(message, "USN"));
-                        device.put("LOCATION", location);
+                        device.put("Location", location);
                         // yes this is the nt value but keep the api of the plugin to js the same
                         device.put("ST", ntValue);
                         device.put("Server", parseHeaderValue(message, "Server"));
