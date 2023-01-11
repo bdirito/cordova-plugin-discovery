@@ -42,8 +42,9 @@
         </feature>
     </config-file>
 
-    <header-file src="src/ios/serviceDiscovery.h" />
-    <source-file src="src/ios/serviceDiscovery.m" />
+    <dependency id="cordova-plugin-add-swift-support" version="2.0.2"/>
+    <source-file src="src/ios/serviceDiscovery.swift" />
+
   </platform>
 
 
