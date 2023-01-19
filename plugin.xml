@@ -37,6 +37,7 @@
   <!-- ios -->
   <platform name="ios">
     <config-file target="config.xml" parent="/*">
+      <preference name="deployment-target" value="14.0" />
         <feature name="serviceDiscovery">
           <param name="ios-package" value="serviceDiscovery" onload="true" />
         </feature>
