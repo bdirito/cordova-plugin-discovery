@@ -2,13 +2,19 @@ import Network
 
 @objc(serviceDiscovery) class serviceDiscovery : CDVPlugin {
     @objc(getNetworkServices:) func getNetworkServices(_ command: CDVInvokedUrlCommand) {
-    var pluginResult = CDVPluginResult(
-      status: CDVCommandStatus_ERROR
-    )
-
+        var pluginResult = CDVPluginResult(
+            status: CDVCommandStatus_ERROR
+        )
+        
         guard let multicast = try? NWMulticastGroup(for:
-            [ .hostPort(host: "239.255.255.250", port: 1900) ])
-            else { fatalError("error") }
+                                                        [ .hostPort(host: "239.255.255.250", port: 1900) ])
+        else {
+            self.commandDelegate!.send(
+                pluginResult,
+                callbackId: command.callbackId
+            );
+            return;
+        }
         let group = NWConnectionGroup(with: multicast, using: .udp)
         group.setReceiveHandler(maximumMessageSize: 16384, rejectOversizedMessages: true) { (message, content, isComplete) in
             if((content) != nil) {
@@ -26,15 +32,15 @@ import Network
         let deadline = DispatchTime.now() + .seconds(10)
         mainQueue.asyncAfter(deadline: deadline) {
             group.cancel()
+            pluginResult = CDVPluginResult(
+                status: CDVCommandStatus_OK,
+                messageAs: ""
+            )
+            self.commandDelegate!.send(
+                pluginResult,
+                callbackId: command.callbackId
+            )
         }
         
-        pluginResult = CDVPluginResult(
-          status: CDVCommandStatus_OK,
-          messageAs: ""
-        )
-      self.commandDelegate!.send(
-      pluginResult,
-      callbackId: command.callbackId
-    )
-  }
+    }
 }
