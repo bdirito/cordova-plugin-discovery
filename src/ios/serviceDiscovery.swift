@@ -68,7 +68,7 @@ func processResponse(message:String)-> [String: String]
         group.start(queue: .main)
         
         let mainQueue = DispatchQueue.main
-        let deadline = DispatchTime.now() + .seconds(10)
+        let deadline = DispatchTime.now() + .milliseconds(7500)
         mainQueue.asyncAfter(deadline: deadline) {
             group.cancel()
             let ret: [[String:String]] = services.values.compactMap { $0 };
