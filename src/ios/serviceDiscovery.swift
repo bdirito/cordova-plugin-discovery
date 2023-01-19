@@ -2,17 +2,12 @@ import Network
 
 func processResponse(message:String)-> [String: String]
 {
-//    NSLog(@"%@", message);
-    
     var msgLines = message.components(separatedBy: "\r");
-
-//    NSLog(@"total lines:%lu", [msgLines count]);
 
     var data: [String: String] = [:]
 
 
     for i in 0..<msgLines.count {
-     //   NSLog(@"working on:%@", msgLines[i]);
         var items = msgLines[i].split(separator: ":", maxSplits: 1);
 
         if(items.count == 2){
@@ -22,14 +17,9 @@ func processResponse(message:String)-> [String: String]
         }
     }
     return data;
-
 }
 
-
-
 @objc(serviceDiscovery) class serviceDiscovery : CDVPlugin {
-    
-    
     
     @objc(getNetworkServices:) func getNetworkServices(_ command: CDVInvokedUrlCommand) {
         var pluginResult = CDVPluginResult(
@@ -46,6 +36,7 @@ func processResponse(message:String)-> [String: String]
             return;
         }
         let group = NWConnectionGroup(with: multicast, using: .udp)
+        //Dictionary of Locations to SSDP Service data dictionary (see processResponse)
         var services: [String:[String:String]] = [:]
         group.setReceiveHandler(maximumMessageSize: 16384, rejectOversizedMessages: true) { (message, content, isComplete) in
             if((content) != nil) {
@@ -63,11 +54,12 @@ func processResponse(message:String)-> [String: String]
         }
         
         group.stateUpdateHandler = { (newState) in
-            print("Group entered state \(String(describing: newState))")
+            print("Multicast Group entered state \(String(describing: newState))")
         }
         group.start(queue: .main)
         
         let mainQueue = DispatchQueue.main
+        //7.5 seconds is half of 15 seconds which is the observed timeout of the Amp upnp in the office
         let deadline = DispatchTime.now() + .milliseconds(7500)
         mainQueue.asyncAfter(deadline: deadline) {
             group.cancel()
@@ -81,6 +73,5 @@ func processResponse(message:String)-> [String: String]
                 callbackId: command.callbackId
             )
         }
-        
     }
 }
